@@ -11,8 +11,9 @@ constexpr unsigned long LINK_BAUD_RATE = 57600;
 
 // ============================================================================
 // Motor & Microstepping Parameters
-// Configure A4988 drivers on CNC Shield V3.0 for 1/8 microstepping:
-//   MS1 = Jumper ON, MS2 = Jumper ON, MS3 = Jumper OFF (200 * 8 = 1600 steps/rev)
+// Configure TMC2209 drivers (standalone STEP/DIR) on CNC Shield V3.0 for 1/8 microstepping:
+//   Remove ALL jumpers (MS1 OFF, MS2 OFF, MS3 OFF) -> 1/8 step + 256x StealthChop2 interpolation
+//   (For A4988 instead: MS1 ON, MS2 ON, MS3 OFF -> 200 * 8 = 1600 steps/rev)
 // ============================================================================
 constexpr int MICROSTEPS = 8;
 constexpr int STEPS_PER_ROTATION = 200 * MICROSTEPS;

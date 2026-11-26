@@ -3,7 +3,7 @@
 This guide explains how to build, wire, flash, and run **Mural v2** using:
 
 - **HW-649** (`UNO+WiFi R3 ATmega328P + ESP8266 32Mb/4MB CH340G`)
-- **Arduino CNC Shield V3.0** with two **A4988** stepper drivers
+- **Arduino CNC Shield V3.0** with two **TMC2209** stepper driver modules (standalone STEP/DIR mode)
 - Standard Mural v2 hardware (2× NEMA 17 pancake steppers, MG90S servo, optional 0.91" I2C OLED display)
 - **No SD Card** — drawing commands stream live from your web browser over WiFi!
 
@@ -29,6 +29,10 @@ The HW-649 puts both an **ATmega328P** (Arduino Uno) and an **ESP8266** (WiFi + 
 
 ## 1. Hardware Wiring & Jumpers
 
+![HW-649 + Arduino CNC Shield V3.0 + TMC2209 Wiring Diagram](docs/images/hw649-cnc-shield-wiring.svg)
+
+> *Note: Exact physical placement of peripheral headers varies slightly across CNC Shield V3.0 clones. Always match the silkscreen labels (`EN`, `VM`, `Z+`, `SDA`/`SCL`) printed on your board before applying power.*
+
 ### CNC Shield V3.0 Pin Mapping
 
 | Component | CNC Shield V3.0 Header | ATmega328P Pin | Notes |
@@ -41,29 +45,59 @@ The HW-649 puts both an **ATmega328P** (Arduino Uno) and an **ESP8266** (WiFi + 
 
 > **Servo Power Tip:** If the MG90S servo causes the board to brown out or reset when moving, power the servo's red `5V` wire from an external 5V buck converter (sharing `GND` with the CNC Shield).
 
-### Microstepping Jumpers (CRITICAL!)
+### Microstepping Jumpers for TMC2209 (CRITICAL!)
 
 Mural v2 expects **1/8 microstepping** (`1600` steps/revolution for standard 1.8° NEMA 17 steppers).
 
-Under **both** the **X** and **Y** A4988 driver sockets on the CNC Shield V3.0, install jumpers as follows:
+In **TMC2209 standalone (STEP/DIR) mode**, the microstepping jumper table is **different from A4988**! Under **both** the **X** and **Y** TMC2209 driver sockets on the CNC Shield V3.0, **remove ALL THREE jumpers**:
 
-| Pin | Jumper | State |
+| CNC Shield Jumper | TMC2209 State | Result |
 |---|---|---|
-| **M0 / MS1** | **Installed** | HIGH |
-| **M1 / MS2** | **Installed** | HIGH |
-| **M2 / MS3** | **Removed** | LOW |
+| **M0 / MS1** | **Removed** (LOW) | **1/8 microstepping** with StealthChop2 (silent) + 256× MicroPlyer interpolation |
+| **M1 / MS2** | **Removed** (LOW) | *(Do not install — `MS1+MS2 ON` gives 1/16 on TMC2209!)* |
+| **M2 / MS3** | **Removed** | **NEVER install with TMC2209** (on TMC2209 modules this pin is `SPREAD`/`PDN_UART`/`CLK`, not MS3!) |
 
-*(If you prefer 1/16 microstepping with all 3 jumpers installed, change `MICROSTEPS` from `8` to `16` in `firmware/mural_esp8266/config.h`.)*
+*(Reference — TMC2209 standalone table: `MS1=OFF, MS2=OFF` → **1/8**; `MS1=ON, MS2=ON` → 1/16; `MS1=ON, MS2=OFF` → 1/32; `MS1=OFF, MS2=ON` → 1/64. If you ever switch to 1/16 microstepping, change `MICROSTEPS` from `8` to `16` in `firmware/mural_esp8266/config.h`.)*
 
-### A4988 Current Limit (Vref)
+### Setting Up the TMC2209 Modules & Tuning the Trim Pot (`Vref`)
 
-The BOM NEMA 17 pancake steppers are rated for **1.0 A**. Before attaching the motors, adjust the small trim pot on each A4988 driver using a multimeter (probe metal screwdriver on pot vs `GND`):
+Follow these steps carefully **before** connecting your stepper motors to avoid damaging the drivers or overheating the motors:
 
-$$V_{\text{ref}} = I_{\text{max}} \times 8 \times R_{\text{sense}}$$
+#### Step 1: Install Heatsinks & Check Extra Pins
+1. Stick the included aluminum heatsink onto the flat thermal pad on top of each TMC2209 module. Make sure the metal heatsink **does not touch any solder pins or tiny SMD components** around the edges.
+2. Check the underside of your TMC2209 modules (especially BigTreeTech v1.2/v1.3): some boards have two extra downward pins (`DIAG` and `INDEX`). Confirm they sit cleanly over empty space on the CNC Shield and don't touch any header pins underneath (Mural v2 does not use `DIAG`/`INDEX`).
 
-- For common green/red A4988 boards with **`R100` (0.10 Ω)** sense resistors: set **`Vref ≈ 0.56 V – 0.72 V`** (0.7–0.9 A max, runs cool and strong).
-- For **`R050` (0.05 Ω)** sense resistors: set **`Vref ≈ 0.28 V – 0.36 V`**.
-- For **`R068` (0.068 Ω)** sense resistors: set **`Vref ≈ 0.38 V – 0.49 V`**.
+#### Step 2: Check Driver Orientation (Do NOT Match Pot Position!)
+> **ORIENTATION WARNING:** On most TMC2209 modules (BTT, MKS, FYSETC), the adjustment trim pot is on the **opposite end** compared to an A4988!
+> - **Always align the `EN` pin** on the TMC2209 with the **`EN` label** on the CNC Shield V3.0.
+> - Double-check that **`VM` (`VMOT`)** and **`GND`** match the CNC Shield silkscreen before plugging the modules into the **X** and **Y** sockets.
+> - Leave the **Z** and **A** driver sockets empty (and leave all A-axis clone jumpers removed).
+
+#### Step 3: Tune the Onboard Trim Pot (`Vref`)
+The BOM NEMA 17 pancake steppers are rated for **1.0 A peak** (the original Mural v2 FluidNC firmware sets `rms_current(707)` mA). In standalone mode, standard TMC2209 modules with **`R110` (0.11 Ω)** sense resistors follow:
+
+$$V_{\text{ref}} \approx I_{\text{RMS}} \times \sqrt{2} \approx I_{\text{RMS}} \times 1.414 \qquad \left(I_{\text{RMS}} \approx V_{\text{ref}} \times 0.707\right)$$
+
+| Target `Vref` (for `R110` / 0.11 Ω) | Motor Current ($I_{\text{RMS}}$) | Notes |
+|---|---|---|
+| `0.85 V` | ~600 mA RMS | Coolest operation; good conservative starting point |
+| **`0.95 V – 1.00 V`** | **~670 – 707 mA RMS** | **Recommended** — matches original Mural v2 FluidNC current |
+| > `1.00 V` | > 707 mA RMS | **Avoid** on 1.0 A pancake steppers (may overheat / soften PLA mounts) |
+
+*(Check the two small sense resistors on your TMC2209 PCB — nearly all are marked **`R110`** (0.11 Ω). If yours are marked `R100` (0.10 Ω), target **`0.85 V – 0.92 V`** instead.)*
+
+**Workbench tuning procedure (repeat for both X and Y drivers):**
+1. **Unplug both stepper motors** from the CNC Shield. *(Never connect or disconnect stepper motors while power is applied — the inductive kickback can permanently destroy a TMC2209!)*
+2. **Power BOTH the 5 V logic rail (HW-649 USB) AND the 12–20 V motor supply (`VMOT` blue screw terminal)** — unlike A4988, TMC2209's internal reference voltage (`5VOUT`) requires `VMOT` to be powered; with USB alone, `Vref` reads only ~0.3–0.4 V. Keep the stepper motors disconnected while probing!
+3. **Do NOT put a jumper on `EN/GND`** — `Vref` does not require `EN` to be jumped, and `mural_uno.ino` drives `EN` (`D8`) `LOW` automatically.
+4. Set a multimeter to **DC Volts** (`2 V` or `20 V` range):
+   - Touch the **black probe (COM)** to any **`GND`** pin on the CNC Shield (or the negative `−` screw of the blue terminal).
+   - Touch the **red probe (+)** to the **`VREF` test via/pad** next to the trim pot, or directly onto the metal body of the trim pot itself.
+5. Use a **small ceramic/insulated screwdriver** (be extra careful not to slip and short nearby pins while `VMOT` is live) in **tiny 5–10° increments**:
+   - TMC2209 trim pots are delicate single-turn (~270°) pots — **do not force past the end stop**.
+   - Check which way raises voltage on your board (clockwise vs. counter-clockwise varies by manufacturer) and dial it to **`0.95 V – 1.00 V`**.
+6. **Disconnect BOTH 12–20 V motor power and USB power completely**, wait a few seconds for capacitors to discharge, then plug your Left stepper into **X-MOT** and Right stepper into **Y-MOT**.
+7. Once running, touch-check the pancake motors after 5–10 minutes of holding/drawing: they should feel comfortably warm (~40–50 °C), never painfully hot. If too hot, power down, disconnect motors, and lower `Vref` slightly (e.g. `0.85 V`).
 
 ### Power Supply Warning
 
@@ -193,5 +227,5 @@ http://localhost:5173/?host=http://mural.local
   - Either flip the 4-pin stepper motor plug 180° on the CNC Shield (with power OFF!), or toggle `INVERT_LEFT_DIR` / `INVERT_RIGHT_DIR` in `firmware/mural_uno/config.h` and re-flash the Uno.
 - **Motors don't move or buzz/skip**:
   - Check that 12–20 V power is connected to the CNC Shield blue terminal.
-  - Check A4988 orientation (enable pin `EN` aligns with `EN` on the CNC Shield!) and Vref potentiometer setting.
-  - Verify MS1 + MS2 jumpers are installed under both drivers.
+  - Check **TMC2209 orientation** (`EN` aligns with `EN` on the CNC Shield — do not go by potentiometer position!) and `Vref` (`~0.90–1.00 V` for `R110` sense resistors).
+  - Verify **ALL 3 microstepping jumpers (`MS1`, `MS2`, `MS3`) are removed** under both X and Y TMC2209 drivers (an installed `MS3` jumper can prevent stepping on some TMC2209 boards).

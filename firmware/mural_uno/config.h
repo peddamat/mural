@@ -4,7 +4,7 @@
 #include <Arduino.h>
 
 // ============================================================================
-// Hardware Pinout: HW-649 (ATmega328P) + Arduino CNC Shield V3.0 + A4988
+// Hardware Pinout: HW-649 (ATmega328P) + Arduino CNC Shield V3.0 + TMC2209
 // ============================================================================
 
 // Left stepper motor -> CNC Shield V3.0 X-Axis slot

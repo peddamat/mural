@@ -3,7 +3,8 @@
 // Target: HW-649 (UNO+WiFi R3 ATmega328P+ESP8266) + Arduino CNC Shield V3.0
 //
 // Responsibilities:
-//   - Drives Left (X-axis) and Right (Y-axis) steppers via A4988 & AccelStepper
+//   - Drives Left (X-axis) and Right (Y-axis) steppers via TMC2209 (standalone
+//     STEP/DIR mode, no MS jumpers = 1/8 microstepping) & AccelStepper
 //   - Drives MG90S pen servo on D11 (CNC Shield V3.0 Z+ endstop pin)
 //   - Optional 0.91" SSD1306 I2C OLED display on A4 (SDA) / A5 (SCL)
 //   - Maintains a 10-slot FIFO motion/servo queue fed by ESP8266 over UART
@@ -432,7 +433,7 @@ void serviceSerial() {
 } // namespace
 
 void setup() {
-    // Enable A4988 drivers right away (Active LOW) so belts stay taut and
+    // Enable TMC2209 drivers right away (Active LOW) so belts stay taut and
     // motors don't creep or drop the carriage on power-up.
     pinMode(MOTOR_ENABLE_PIN, OUTPUT);
     digitalWrite(MOTOR_ENABLE_PIN, LOW);
