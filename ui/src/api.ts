@@ -1,11 +1,54 @@
-import type { BackendState } from './types'
+import type { BackendState, StreamStatus } from './types'
+
+// ---------------------------------------------------------------------------
+// Optional remote host support (e.g. ?host=http://192.168.1.42 or http://mural.local)
+// Lets you run the React UI from a PC browser and stream directly to HW-649
+// even without uploading static files to LittleFS.
+// ---------------------------------------------------------------------------
+function resolveApiBase(): string {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const hostParam = params.get('host')
+    if (hostParam) {
+      const cleaned = hostParam.replace(/\/+$/, '')
+      sessionStorage.setItem('muralApiHost', cleaned)
+      return cleaned
+    }
+    const saved = sessionStorage.getItem('muralApiHost')
+    if (saved) return saved
+  } catch {
+    // ignore
+  }
+  return ''
+}
+
+const API_BASE = resolveApiBase()
+
+function apiUrl(path: string): string {
+  return `${API_BASE}${path}`
+}
 
 // ---------------------------------------------------------------------------
 // Mock mode — activated automatically in dev when no backend is reachable
 // ---------------------------------------------------------------------------
 let _mockMode = false
-let _mockState: BackendState = { phase: 'SvgSelect', topDistance: 1667, safeWidth: 1000, homeX: 500, homeY: 0, safeXFraction: 0.2, safeYFraction: 0.25, pulleyDiameter: 10.14926 }
+let _mockState: BackendState = {
+  phase: 'SvgSelect',
+  topDistance: 1667,
+  safeWidth: 1000,
+  homeX: 500,
+  homeY: 350,
+  safeXFraction: 0.2,
+  safeYFraction: 0.25,
+  pulleyDiameter: 10.14926,
+  streamingMode: true,
+  unoConnected: true,
+}
 let _mockUploadedBlob: Blob | null = null
+let _mockStreamNextSeq = 0
+let _mockStreamTotal = 0
+let _mockStreamDone = false
+let _mockStreamState: StreamStatus['state'] = 'idle'
 
 export function enableMockMode(state: BackendState) {
   _mockMode = true
@@ -17,7 +60,7 @@ export function isMockMode() { return _mockMode }
 // ---------------------------------------------------------------------------
 
 async function post<T = BackendState>(url: string, body: Record<string, unknown> = {}): Promise<T> {
-  const res = await fetch(url, {
+  const res = await fetch(apiUrl(url), {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams(body as Record<string, string>).toString(),
@@ -32,7 +75,7 @@ async function post<T = BackendState>(url: string, body: Record<string, unknown>
 }
 
 async function get<T = BackendState>(url: string): Promise<T> {
-  const res = await fetch(url)
+  const res = await fetch(apiUrl(url))
   const text = await res.text()
   if (!res.ok) throw new Error(text || `${url} failed: ${res.status}`)
   try {
@@ -44,7 +87,19 @@ async function get<T = BackendState>(url: string): Promise<T> {
 
 export const getState = (): Promise<BackendState> => get('/getState')
 
-export const doneWithPhase = (): Promise<BackendState> => post('/doneWithPhase')
+export const doneWithPhase = (): Promise<BackendState> => {
+  if (_mockMode) {
+    const nextMap: Record<string, BackendState['phase']> = {
+      SvgSelect: 'RetractBelts',
+      RetractBelts: 'ExtendToHome',
+      BeginDrawing: 'SetTopDistance',
+      Drawing: 'SetTopDistance',
+    }
+    _mockState = { ..._mockState, phase: nextMap[_mockState.phase] ?? 'SetTopDistance' }
+    return Promise.resolve(_mockState)
+  }
+  return post('/doneWithPhase')
+}
 
 export const setTopDistance = (distance: number): Promise<BackendState> =>
   post('/setTopDistance', { distance: String(distance) })
@@ -68,6 +123,149 @@ export const postMotorCommand = (command: string): Promise<void> =>
 
 export const run = (speed: number): Promise<void> => post<void>('/run', { speed: String(speed) })
 
+// ---------------------------------------------------------------------------
+// Browser streaming endpoints (HW-649 without SD card)
+// ---------------------------------------------------------------------------
+
+export class StreamSeqMismatchError extends Error {
+  nextSeq: number
+  constructor(nextSeq: number) {
+    super(`Sequence mismatch; expected ${nextSeq}`)
+    this.nextSeq = nextSeq
+  }
+}
+
+export async function startStreamRun(
+  speed: number,
+  totalDistance: number,
+  totalCommands: number,
+): Promise<StreamStatus> {
+  if (_mockMode) {
+    _mockStreamNextSeq = 0
+    _mockStreamTotal = totalCommands
+    _mockStreamDone = false
+    _mockStreamState = 'drawing'
+    return {
+      state: 'drawing',
+      accepted: 0,
+      nextSeq: 0,
+      executed: 0,
+      totalCommands,
+      buffered: 0,
+      capacity: 64,
+      progress: 0,
+      streamDone: false,
+      unoConnected: true,
+      unoFree: 10,
+    }
+  }
+  return post<StreamStatus>('/run', {
+    speed: String(speed),
+    totalDistance: String(totalDistance),
+    totalCommands: String(totalCommands),
+  })
+}
+
+export async function sendStreamBatch(
+  seq: number,
+  cmds: string,
+  done: boolean,
+): Promise<StreamStatus> {
+  if (_mockMode) {
+    const lines = cmds ? cmds.split('\n').filter(Boolean).length : 0
+    _mockStreamNextSeq = Math.max(_mockStreamNextSeq, seq + lines)
+    if (done) {
+      _mockStreamDone = true
+      _mockStreamState = 'finished'
+    }
+    const pct = _mockStreamTotal > 0 ? Math.min(100, Math.round((_mockStreamNextSeq / _mockStreamTotal) * 100)) : 100
+    return {
+      state: _mockStreamState,
+      accepted: lines,
+      nextSeq: _mockStreamNextSeq,
+      executed: _mockStreamNextSeq,
+      totalCommands: _mockStreamTotal,
+      buffered: 0,
+      capacity: 64,
+      progress: pct,
+      streamDone: _mockStreamDone,
+      unoConnected: true,
+      unoFree: 10,
+    }
+  }
+
+  const res = await fetch(apiUrl('/stream'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      seq: String(seq),
+      cmds,
+      done: done ? '1' : '0',
+    }).toString(),
+  })
+  const text = await res.text()
+  if (res.status === 409) {
+    try {
+      const parsed = JSON.parse(text) as { nextSeq?: number }
+      if (typeof parsed.nextSeq === 'number') {
+        throw new StreamSeqMismatchError(parsed.nextSeq)
+      }
+    } catch (e) {
+      if (e instanceof StreamSeqMismatchError) throw e
+    }
+  }
+  if (!res.ok) throw new Error(text || `/stream failed: ${res.status}`)
+  return JSON.parse(text) as StreamStatus
+}
+
+export async function getStreamStatus(): Promise<StreamStatus> {
+  if (_mockMode) {
+    const pct = _mockStreamTotal > 0 ? Math.min(100, Math.round((_mockStreamNextSeq / _mockStreamTotal) * 100)) : 100
+    return {
+      state: _mockStreamState,
+      accepted: 0,
+      nextSeq: _mockStreamNextSeq,
+      executed: _mockStreamNextSeq,
+      totalCommands: _mockStreamTotal,
+      buffered: 0,
+      capacity: 64,
+      progress: pct,
+      streamDone: _mockStreamDone,
+      unoConnected: true,
+      unoFree: 10,
+    }
+  }
+  return get<StreamStatus>('/streamStatus')
+}
+
+export const pauseStream = (): Promise<StreamStatus> => {
+  if (_mockMode) {
+    _mockStreamState = 'paused'
+    return getStreamStatus()
+  }
+  return post<StreamStatus>('/pause')
+}
+
+export const resumeStream = (): Promise<StreamStatus> => {
+  if (_mockMode) {
+    _mockStreamState = 'drawing'
+    return getStreamStatus()
+  }
+  return post<StreamStatus>('/resumeStream')
+}
+
+export const stopStream = (): Promise<StreamStatus> => {
+  if (_mockMode) {
+    _mockStreamState = 'stopped'
+    return getStreamStatus()
+  }
+  return post<StreamStatus>('/stop')
+}
+
+// ---------------------------------------------------------------------------
+// Legacy SD card upload / download (used by original ESP32 firmware)
+// ---------------------------------------------------------------------------
+
 const UPLOAD_CHUNK_SIZE = 32 * 1024
 const UPLOAD_MAX_RETRIES = 3
 const UPLOAD_RETRY_DELAY_MS = 500
@@ -76,9 +274,6 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-// Uploads one chunk as its own request, identified by its byte offset in
-// the overall file so the server can apply a retry idempotently (see
-// SvgSelectPhase::handleUpload).
 function sendChunk(chunk: Blob, offset: number, totalBytes: number, final: boolean): Promise<BackendState> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
@@ -103,7 +298,7 @@ function sendChunk(chunk: Blob, offset: number, totalBytes: number, final: boole
       totalBytes: String(totalBytes),
       final: String(final),
     })
-    xhr.open('POST', `/uploadCommands?${params.toString()}`)
+    xhr.open('POST', apiUrl(`/uploadCommands?${params.toString()}`))
     xhr.send(formData)
   })
 }
@@ -190,7 +385,7 @@ export function downloadCommands(
     }
 
     xhr.onerror = () => reject(new Error('Download network error'))
-    xhr.open('GET', '/downloadCommands')
+    xhr.open('GET', apiUrl('/downloadCommands'))
     xhr.send()
   })
 }

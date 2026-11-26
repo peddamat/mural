@@ -4,6 +4,9 @@ Please find the main documentation on https://getmural.me.
 
 Discord: https://discord.gg/J3ZautHMTw
 
+> **Using an HW-649 (UNO+WiFi R3 ATmega328P+ESP8266) + Arduino CNC Shield V3.0 (no SD card)?**
+> See **[HW649_SETUP.md](HW649_SETUP.md)** for full wiring, DIP switch settings, flashing instructions, and live browser streaming setup.
+
 # Additional Information
 
 ## Positioning of the Drawing on the Wall

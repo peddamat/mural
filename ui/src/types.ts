@@ -5,6 +5,7 @@ export type Phase =
   | 'PenCalibration'
   | 'SvgSelect'
   | 'BeginDrawing'
+  | 'Drawing'
 
 export interface BackendState {
   phase: Phase
@@ -18,6 +19,30 @@ export interface BackendState {
   moving?: boolean
   startedHoming?: boolean
   freeKb?: number
+  streamingMode?: boolean
+  unoConnected?: boolean
+}
+
+export type StreamRunnerState =
+  | 'idle'
+  | 'drawing'
+  | 'paused'
+  | 'homing'
+  | 'finished'
+  | 'stopped'
+
+export interface StreamStatus {
+  state: StreamRunnerState
+  accepted: number
+  nextSeq: number
+  executed: number
+  totalCommands: number
+  buffered: number
+  capacity: number
+  progress: number
+  streamDone: boolean
+  unoConnected: boolean
+  unoFree: number
 }
 
 /** Internal UI phase — extends backend phases with SVG pipeline sub-states */

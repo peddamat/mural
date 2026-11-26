@@ -373,9 +373,20 @@ export function DrawingPreviewScreen({ state, svgState, imageState, renderer, on
       </div>
 
       {commandsText !== null && (() => {
+        const sizeKb = Math.round(new Blob([commandsText]).size / 1024)
+        if (state.streamingMode) {
+          const cmdCount = result ? Math.max(0, result.commands.length - 2) : 0
+          return (
+            <div className="flex items-center justify-between rounded-xl bg-gray-800/60 border border-gray-700/70 px-3 py-2 text-xs text-gray-300">
+              <span>Live browser streaming (no SD card limit)</span>
+              <span className="font-mono text-cyan-400">
+                {cmdCount.toLocaleString()} cmds · {sizeKb} kb
+              </span>
+            </div>
+          )
+        }
         const MAX_KB = state.freeKb ?? 2600
         const WARN_KB = Math.round(MAX_KB * 0.8)
-        const sizeKb = Math.round(new Blob([commandsText]).size / 1024)
         const pct = Math.min(100, (sizeKb / MAX_KB) * 100)
         const barColor = sizeKb >= MAX_KB ? 'bg-red-500' : sizeKb >= WARN_KB ? 'bg-yellow-400' : 'bg-emerald-500'
         const labelColor = sizeKb >= MAX_KB ? 'text-red-400' : sizeKb >= WARN_KB ? 'text-yellow-400' : 'text-gray-400'

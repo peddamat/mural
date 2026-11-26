@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { getState, enableMockMode } from './api'
+import { getState, doneWithPhase, enableMockMode } from './api'
+import { saveCachedCommands, loadCachedCommands, clearCachedCommands } from './commandStore'
 import { showErrorAlert } from './components/AlertModal'
 import type { BackendState, UiPhase } from './types'
 import type { SvgState } from './svgControl'
@@ -20,17 +21,22 @@ import { DrawingPreviewScreen } from './screens/DrawingPreviewScreen'
 import { UploadProgressScreen } from './screens/UploadProgressScreen'
 import { BeginDrawingScreen } from './screens/BeginDrawingScreen'
 import { DrawingBeganScreen } from './screens/DrawingBeganScreen'
+import { DrawingStreamScreen } from './screens/DrawingStreamScreen'
 
 export default function App() {
   const [backendState, setBackendState] = useState<BackendState | null>(null)
   const [uiPhase, setUiPhase] = useState<UiPhase>('loading')
 
-  // SVG pipeline state
+  // SVG / Raster pipeline state
   const [svgState, setSvgState] = useState<SvgState | null>(null)
   const [rasterState, setRasterState] = useState<RasterImageState | null>(null)
   const [inputType, setInputType] = useState<'svg' | 'raster' | null>(null)
   const [selectedRenderer, setSelectedRenderer] = useState<RendererDefinition | null>(null)
   const [renderedCommands, setRenderedCommands] = useState<string | null>(null)
+  const [drawSpeed, setDrawSpeed] = useState<number>(() =>
+    parseInt(localStorage.getItem('muralSpeed') ?? '650', 10)
+  )
+  const [attachExistingDraw, setAttachExistingDraw] = useState(false)
 
   // The backend uses 'SvgSelect' as its "ready to draw" phase, but we intercept
   // it to show our own InputSelect screen instead.
@@ -40,15 +46,34 @@ export default function App() {
   }
 
   useEffect(() => {
+    loadCachedCommands().then((cached) => {
+      if (cached) setRenderedCommands(cached)
+    })
+
     getState()
       .then((s) => {
         if (!s?.phase) throw new Error('No backend')
         setBackendState(s)
-        setUiPhase(backendPhaseToUiPhase(s.phase))
+        if (s.phase === 'Drawing') {
+          setAttachExistingDraw(true)
+          setUiPhase('Drawing')
+        } else {
+          setUiPhase(backendPhaseToUiPhase(s.phase))
+        }
       })
       .catch(() => {
         if (import.meta.env.DEV) {
-          const mock = { phase: 'SvgSelect' as const, topDistance: 1667, safeWidth: 1000, homeX: 500, homeY: 0, safeXFraction: 0.2, safeYFraction: 0.25 }
+          const mock: BackendState = {
+            phase: 'SvgSelect',
+            topDistance: 1667,
+            safeWidth: 1000,
+            homeX: 500,
+            homeY: 350,
+            safeXFraction: 0.2,
+            safeYFraction: 0.25,
+            streamingMode: true,
+            unoConnected: true,
+          }
           enableMockMode(mock)
           setBackendState(mock)
           setUiPhase('InputSelect')
@@ -61,6 +86,13 @@ export default function App() {
   function handleStateUpdate(s: BackendState) {
     setBackendState(s)
     setUiPhase(backendPhaseToUiPhase(s.phase))
+  }
+
+  function handleResetSession(s: BackendState) {
+    clearCachedCommands()
+    setRenderedCommands(null)
+    setAttachExistingDraw(false)
+    handleStateUpdate(s)
   }
 
   function handleSelectSvg() {
@@ -114,8 +146,22 @@ export default function App() {
     }
   }
 
-  function handleCommandsAccepted(commands: string) {
+  async function handleCommandsAccepted(commands: string) {
     setRenderedCommands(commands)
+    await saveCachedCommands(commands)
+
+    if (backendState?.streamingMode) {
+      // No SD card: keep commands in browser memory/IndexedDB and advance straight to RetractBelts
+      try {
+        const nextState = await doneWithPhase()
+        setBackendState(nextState)
+        setUiPhase(backendPhaseToUiPhase(nextState.phase))
+      } catch (err) {
+        await showErrorAlert(`Failed to advance phase: ${err}`)
+      }
+      return
+    }
+
     setUiPhase('UploadProgress')
   }
 
@@ -126,6 +172,16 @@ export default function App() {
 
   async function handleUploadError(message: string) {
     await showErrorAlert(message)
+  }
+
+  function handleBeginDrawing(speed: number) {
+    setDrawSpeed(speed)
+    setAttachExistingDraw(false)
+    if (backendState?.streamingMode) {
+      setUiPhase('Drawing')
+    } else {
+      setUiPhase('DrawingBegan')
+    }
   }
 
   let currentScreen
@@ -206,8 +262,20 @@ export default function App() {
     case 'BeginDrawing':
       currentScreen = (
         <BeginDrawingScreen
-          onBegin={() => setUiPhase('DrawingBegan')}
-          onReset={handleStateUpdate}
+          streamingMode={backendState?.streamingMode}
+          hasCommands={Boolean(renderedCommands)}
+          onBegin={handleBeginDrawing}
+          onReset={handleResetSession}
+        />
+      )
+      break
+    case 'Drawing':
+      currentScreen = (
+        <DrawingStreamScreen
+          commands={renderedCommands}
+          speed={drawSpeed}
+          attachOnly={attachExistingDraw}
+          onReset={handleResetSession}
         />
       )
       break
@@ -222,6 +290,11 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8">
+      {backendState?.streamingMode && backendState.unoConnected === false && uiPhase !== 'Drawing' && (
+        <div className="w-full max-w-sm sm:max-w-md lg:max-w-xl mb-4 rounded-xl bg-amber-950/70 border border-amber-700/70 px-4 py-3 text-xs text-amber-200 leading-relaxed">
+          <strong>ATmega328P not responding:</strong> Make sure the HW-649 DIP switches <strong>1 &amp; 2 are ON</strong> (3–8 OFF) and press Reset.
+        </div>
+      )}
       <div className="w-full max-w-sm sm:max-w-md lg:max-w-xl 2xl:max-w-4xl">{currentScreen}</div>
       <a
         href="https://github.com/nikivanov/mural"
