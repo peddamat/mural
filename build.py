@@ -53,5 +53,13 @@ def build_web_assets(project_dir):
 if __name__ == "__main__":
     build_web_assets(os.path.dirname(os.path.abspath(__file__)))
 else:
+    from SCons.Script import COMMAND_LINE_TARGETS
+
     Import("env")
-    build_web_assets(env.subst("$PROJECT_DIR"))
+    skip_targets = {"nobuild", "clean", "compiledb", "idedata"}
+    if os.environ.get("MURAL_SKIP_WEB_BUILD") == "1" or any(
+        t in COMMAND_LINE_TARGETS for t in skip_targets
+    ):
+        print("Skipping web asset build")
+    else:
+        build_web_assets(env.subst("$PROJECT_DIR"))

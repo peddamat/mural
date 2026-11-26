@@ -2,6 +2,307 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
+			"label": "Firmware: Build All (HW-649 Uno + ESP8266 + LittleFS)",
+			"type": "shell",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"windows": {
+				"command": "powershell",
+				"args": [
+					"-NoProfile",
+					"-ExecutionPolicy",
+					"Bypass",
+					"-File",
+					"${workspaceFolder}/.devcontainer/wslc-pio.ps1",
+					"build",
+					"all"
+				]
+			},
+			"linux": {
+				"command": "bash",
+				"args": [
+					"-lc",
+					"set -e; [ -d worker/node_modules ] || npm i --prefix worker; [ -d ui/node_modules ] || npm i --prefix ui; pio run -e hw649_uno && pio run -e hw649_esp8266 && MURAL_SKIP_WEB_BUILD=1 pio run -e hw649_esp8266 -t buildfs"
+				]
+			},
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared"
+			}
+		},
+		{
+			"label": "Firmware: Build HW-649 Uno (ATmega328P)",
+			"type": "shell",
+			"group": "build",
+			"windows": {
+				"command": "powershell",
+				"args": [
+					"-NoProfile",
+					"-ExecutionPolicy",
+					"Bypass",
+					"-File",
+					"${workspaceFolder}/.devcontainer/wslc-pio.ps1",
+					"build",
+					"hw649_uno"
+				]
+			},
+			"linux": {
+				"command": "pio",
+				"args": [
+					"run",
+					"-e",
+					"hw649_uno"
+				]
+			},
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared"
+			}
+		},
+		{
+			"label": "Firmware: Build HW-649 ESP8266 (Firmware + LittleFS)",
+			"type": "shell",
+			"group": "build",
+			"windows": {
+				"command": "powershell",
+				"args": [
+					"-NoProfile",
+					"-ExecutionPolicy",
+					"Bypass",
+					"-File",
+					"${workspaceFolder}/.devcontainer/wslc-pio.ps1",
+					"build",
+					"hw649_esp8266"
+				]
+			},
+			"linux": {
+				"command": "bash",
+				"args": [
+					"-lc",
+					"set -e; [ -d worker/node_modules ] || npm i --prefix worker; [ -d ui/node_modules ] || npm i --prefix ui; pio run -e hw649_esp8266 && MURAL_SKIP_WEB_BUILD=1 pio run -e hw649_esp8266 -t buildfs"
+				]
+			},
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared"
+			}
+		},
+		{
+			"label": "Firmware: Build ESP32 (FluidNC + Merged Bin)",
+			"type": "shell",
+			"group": "build",
+			"windows": {
+				"command": "powershell",
+				"args": [
+					"-NoProfile",
+					"-ExecutionPolicy",
+					"Bypass",
+					"-File",
+					"${workspaceFolder}/.devcontainer/wslc-pio.ps1",
+					"build",
+					"esp32dev"
+				]
+			},
+			"linux": {
+				"command": "bash",
+				"args": [
+					"-lc",
+					"set -e; [ -d worker/node_modules ] || npm i --prefix worker; [ -d ui/node_modules ] || npm i --prefix ui; pio run -e esp32dev -t mergebin"
+				]
+			},
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared"
+			}
+		},
+		{
+			"label": "Firmware: Upload HW-649 Uno (ATmega328P)",
+			"type": "shell",
+			"dependsOn": [
+				"Firmware: Build HW-649 Uno (ATmega328P)"
+			],
+			"windows": {
+				"command": "powershell",
+				"args": [
+					"-NoProfile",
+					"-ExecutionPolicy",
+					"Bypass",
+					"-File",
+					"${workspaceFolder}/.devcontainer/wslc-pio.ps1",
+					"upload",
+					"hw649_uno"
+				]
+			},
+			"linux": {
+				"command": "bash",
+				"args": [
+					"-lc",
+					"if ls /dev/ttyUSB* /dev/ttyACM* >/dev/null 2>&1; then pio run -e hw649_uno -t nobuild -t upload; else echo 'No USB serial device found in container (wslc does not pass host USB ports). Run this Upload task from VS Code on Windows.' >&2; exit 1; fi"
+				]
+			},
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared"
+			}
+		},
+		{
+			"label": "Firmware: Upload HW-649 ESP8266 (Firmware)",
+			"type": "shell",
+			"dependsOn": [
+				"Firmware: Build HW-649 ESP8266 (Firmware + LittleFS)"
+			],
+			"windows": {
+				"command": "powershell",
+				"args": [
+					"-NoProfile",
+					"-ExecutionPolicy",
+					"Bypass",
+					"-File",
+					"${workspaceFolder}/.devcontainer/wslc-pio.ps1",
+					"upload",
+					"hw649_esp8266"
+				]
+			},
+			"linux": {
+				"command": "bash",
+				"args": [
+					"-lc",
+					"if ls /dev/ttyUSB* /dev/ttyACM* >/dev/null 2>&1; then MURAL_SKIP_WEB_BUILD=1 pio run -e hw649_esp8266 -t nobuild -t upload; else echo 'No USB serial device found in container (wslc does not pass host USB ports). Run this Upload task from VS Code on Windows.' >&2; exit 1; fi"
+				]
+			},
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared"
+			}
+		},
+		{
+			"label": "Firmware: Upload HW-649 ESP8266 (Web UI LittleFS)",
+			"type": "shell",
+			"dependsOn": [
+				"Firmware: Build HW-649 ESP8266 (Firmware + LittleFS)"
+			],
+			"windows": {
+				"command": "powershell",
+				"args": [
+					"-NoProfile",
+					"-ExecutionPolicy",
+					"Bypass",
+					"-File",
+					"${workspaceFolder}/.devcontainer/wslc-pio.ps1",
+					"upload",
+					"hw649_esp8266-fs"
+				]
+			},
+			"linux": {
+				"command": "bash",
+				"args": [
+					"-lc",
+					"if ls /dev/ttyUSB* /dev/ttyACM* >/dev/null 2>&1; then MURAL_SKIP_WEB_BUILD=1 pio run -e hw649_esp8266 -t nobuild -t uploadfs; else echo 'No USB serial device found in container (wslc does not pass host USB ports). Run this Upload task from VS Code on Windows.' >&2; exit 1; fi"
+				]
+			},
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared"
+			}
+		},
+		{
+			"label": "Firmware: Upload HW-649 ESP8266 (Firmware + LittleFS)",
+			"type": "shell",
+			"dependsOn": [
+				"Firmware: Build HW-649 ESP8266 (Firmware + LittleFS)"
+			],
+			"windows": {
+				"command": "powershell",
+				"args": [
+					"-NoProfile",
+					"-ExecutionPolicy",
+					"Bypass",
+					"-File",
+					"${workspaceFolder}/.devcontainer/wslc-pio.ps1",
+					"upload",
+					"hw649_esp8266-all"
+				]
+			},
+			"linux": {
+				"command": "bash",
+				"args": [
+					"-lc",
+					"if ls /dev/ttyUSB* /dev/ttyACM* >/dev/null 2>&1; then MURAL_SKIP_WEB_BUILD=1 pio run -e hw649_esp8266 -t nobuild -t upload && MURAL_SKIP_WEB_BUILD=1 pio run -e hw649_esp8266 -t nobuild -t uploadfs; else echo 'No USB serial device found in container (wslc does not pass host USB ports). Run this Upload task from VS Code on Windows.' >&2; exit 1; fi"
+				]
+			},
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared"
+			}
+		},
+		{
+			"label": "Firmware: Upload ESP32 (FluidNC)",
+			"type": "shell",
+			"dependsOn": [
+				"Firmware: Build ESP32 (FluidNC + Merged Bin)"
+			],
+			"windows": {
+				"command": "powershell",
+				"args": [
+					"-NoProfile",
+					"-ExecutionPolicy",
+					"Bypass",
+					"-File",
+					"${workspaceFolder}/.devcontainer/wslc-pio.ps1",
+					"upload",
+					"esp32dev"
+				]
+			},
+			"linux": {
+				"command": "bash",
+				"args": [
+					"-lc",
+					"if ls /dev/ttyUSB* /dev/ttyACM* >/dev/null 2>&1; then MURAL_SKIP_WEB_BUILD=1 pio run -e esp32dev -t nobuild -t upload && MURAL_SKIP_WEB_BUILD=1 pio run -e esp32dev -t nobuild -t uploadfs; else echo 'No USB serial device found in container (wslc does not pass host USB ports). Run this Upload task from VS Code on Windows.' >&2; exit 1; fi"
+				]
+			},
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared"
+			}
+		},
+		{
+			"label": "Devcontainer: Rebuild wslc Image",
+			"type": "shell",
+			"windows": {
+				"command": "powershell",
+				"args": [
+					"-NoProfile",
+					"-ExecutionPolicy",
+					"Bypass",
+					"-File",
+					"${workspaceFolder}/.devcontainer/wslc-pio.ps1",
+					"build-image"
+				]
+			},
+			"linux": {
+				"command": "echo",
+				"args": [
+					"Already running inside Linux container; rebuild the wslc image from the Windows host."
+				]
+			},
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared"
+			}
+		},
+		{
 			"type": "typescript",
 			"tsconfig": "worker/tsconfig.json",
 			"problemMatcher": [

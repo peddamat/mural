@@ -124,30 +124,41 @@ The HW-649 has an 8-position DIP switch that routes the CH340G USB-Serial chip b
 
 ## 3. Building & Flashing
 
-### Option A: PlatformIO (Recommended — builds firmware + web UI automatically)
+### Option A: VS Code Tasks with `wslc` Devcontainer (Recommended on Windows)
 
-Make sure Node.js (`npm`) and PlatformIO (`pio`) are installed, and install JS dependencies once:
+The project devcontainer (`.devcontainer/Containerfile` + `.devcontainer/devcontainer.json`) uses **WSL Containers (`wslc`)** instead of Docker Desktop and includes PlatformIO Core, Node.js 22 LTS, and all native `node-canvas` build libraries.
 
-```bash
-cd worker && npm install && cd ..
-cd ui && npm install && cd ..
-```
+Because `wslc` does not pass host USB/COM ports into containers, **firmware + web UI builds run automatically inside the `wslc` devcontainer**, while **USB serial uploads flash the pre-built binaries directly from the Windows host** (`pio -t nobuild`).
 
+**Prerequisites (Windows):**
+- WSL with native container support (`wsl --update`; verify with `wslc --version`).
+- PlatformIO installed on Windows (e.g. via the PlatformIO IDE VS Code extension) so host `pio.exe` can flash over COM ports.
+- *(Optional, if reopening the workspace inside the container via Dev Containers)* Set `"dev.containers.dockerPath": "wslc"` in your VS Code **User** `settings.json` (`%APPDATA%\Code\User\settings.json`).
+
+**Using VS Code Tasks (`Ctrl+Shift+B` or *Terminal → Run Task…*):**
+
+| VS Code Task | What It Does |
+|---|---|
+| **`Firmware: Build All (HW-649 Uno + ESP8266 + LittleFS)`** *(Default Build Task — `Ctrl+Shift+B`)* | Auto-builds the `mural-devcontainer:latest` `wslc` image if missing, caches PlatformIO toolchains in the `mural-pio-core` volume, installs `worker`/`ui` npm deps if needed, and builds `hw649_uno`, `hw649_esp8266`, and `littlefs.bin` inside `wslc`. |
+| **`Firmware: Build HW-649 Uno (ATmega328P)`** | Builds `hw649_uno` inside `wslc`. |
+| **`Firmware: Build HW-649 ESP8266 (Firmware + LittleFS)`** | Builds Web UI assets, `hw649_esp8266` firmware, and `littlefs.bin` inside `wslc`. |
+| **`Firmware: Upload HW-649 Uno (ATmega328P)`** | Builds `hw649_uno` in `wslc`, then flashes over USB from Windows. *(Set DIP **SW 3 & 4 ON**.)* |
+| **`Firmware: Upload HW-649 ESP8266 (Firmware + LittleFS)`** | Builds `hw649_esp8266` + LittleFS in `wslc`, then flashes both firmware and Web UI over USB from Windows. *(Set DIP **SW 5, 6 & 7 ON** and press Reset.)* |
+| **`Firmware: Upload HW-649 ESP8266 (Firmware)`** / **`(Web UI LittleFS)`** | Builds in `wslc` and flashes only the ESP8266 firmware or only the LittleFS Web UI image. |
+| **`Devcontainer: Rebuild wslc Image`** | Rebuilds `mural-devcontainer:latest` from `.devcontainer/Containerfile`. |
+
+**Step-by-step flashing flow:**
 1. **Flash ATmega328P**:
-   - Set DIP switches **3 & 4 ON** (all others OFF), plug in USB.
-   - Run:
-     ```bash
-     pio run -e hw649_uno -t upload
-     ```
+   - Set DIP switches **3 & 4 ON** (all others OFF) and plug in USB.
+   - Run task **`Firmware: Upload HW-649 Uno (ATmega328P)`** *(or CLI: `.\.devcontainer\wslc-pio.ps1 build hw649_uno; .\.devcontainer\wslc-pio.ps1 upload hw649_uno`)*.
 2. **Flash ESP8266 firmware + Web UI (LittleFS)**:
-   - Set DIP switches **5, 6, 7 ON** (all others OFF), press **Reset**.
-   - Run:
-     ```bash
-     pio run -e hw649_esp8266 -t upload
-     pio run -e hw649_esp8266 -t uploadfs
-     ```
+   - Set DIP switches **5, 6, 7 ON** (all others OFF) and press **Reset**.
+   - Run task **`Firmware: Upload HW-649 ESP8266 (Firmware + LittleFS)`** *(or CLI: `.\.devcontainer\wslc-pio.ps1 build hw649_esp8266; .\.devcontainer\wslc-pio.ps1 upload hw649_esp8266-all`)*.
+   - *(Tip: To force a specific COM port from PowerShell, pass `-Port COM5` to `.\.devcontainer\wslc-pio.ps1 upload ...`.)*
 3. **Switch to Run Mode**:
    - Set DIP switches **1 & 2 ON** (all others OFF) and press **Reset**.
+
+*(If you run PlatformIO + Node.js natively on Linux/macOS or inside a container with USB passthrough, the same VS Code tasks run `pio` directly, or you can run `npm i --prefix worker && npm i --prefix ui`, `pio run -e hw649_uno -t upload`, `pio run -e hw649_esp8266 -t upload`, and `pio run -e hw649_esp8266 -t uploadfs`.)*
 
 ---
 

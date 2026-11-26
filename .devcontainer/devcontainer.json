@@ -1,13 +1,25 @@
 {
-	"name": "PlatformIO (Community)",
+	"name": "Mural (wslc)",
 	"build": {
 		"dockerfile": "Containerfile",
 		"context": ".",
 		"args": {
-			"FEDORA_COMPAT" : "1", // enables fedora compatibility mode (extra dialout group with gid 18)
 			"VARIANT": "bookworm"
 		}
 	},
+	"workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/${localWorkspaceFolderBasename},type=bind",
+	"workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+	"remoteUser": "vscode",
+	"initializeCommand": [
+		"powershell",
+		"-NoProfile",
+		"-Command",
+		"New-Item -ItemType Directory -Force -Path (Join-Path $env:USERPROFILE '.claude') | Out-Null"
+	],
+	"mounts": [
+		"source=${localEnv:USERPROFILE}/.claude,target=/home/vscode/.claude,type=bind",
+		"source=mural-pio-core,target=/home/vscode/.pio-core,type=volume"
+	],
 	"customizations": {
 		"vscode": {
 			"extensions": [
@@ -21,19 +33,5 @@
 		8008,
 		5173
 	],
-	"mounts": [
-		"source=/dev/,target=/dev/,type=bind,consistency=consistent",
-		"source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind,consistency=cached"
-	],
-	"runArgs": [
-		"--privileged"
-	],
-	"features": {
-		"ghcr.io/devcontainers/features/node:1": {
-    		"version": "lts"
-    	},
-		"ghcr.io/devcontainers/features/git-lfs:1": "latest"
-	},
-	"postAttachCommand": "sudo service udev restart",
-	"postCreateCommand": "npm i --prefix worker && npm i --prefix ui && npm i -g playwright@1.63.0 && playwright install --with-deps chromium"
+	"postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.pio-core && npm i --prefix worker && npm i --prefix ui && npm i -g playwright@1.63.0 && playwright install --with-deps chromium"
 }

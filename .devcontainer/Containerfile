@@ -1,38 +1,34 @@
 ARG VARIANT=bookworm
-FROM mcr.microsoft.com/vscode/devcontainers/base:${VARIANT}
+FROM mcr.microsoft.com/devcontainers/base:${VARIANT}
 
 ENV DEBIAN_FRONTEND=noninteractive
-RUN sudo apt-get update \
- && sudo apt-get -y install --no-install-recommends \
+ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global
+ENV PLATFORMIO_CORE_DIR=/home/vscode/.pio-core
+ENV PATH="/home/vscode/.platformio/penv/bin:/usr/local/share/npm-global/bin:${PATH}"
+
+RUN apt-get update \
+ && apt-get -y install --no-install-recommends \
+      build-essential \
       clang \
+      git-lfs \
       python3-venv \
-      udev \
       pkg-config \
       libcairo2-dev \
       libpango1.0-dev \
       libjpeg-dev \
       libgif-dev \
       librsvg2-dev \
-      libpixman-1-dev
-
-## Set up udev rules for PlatformIO
-RUN curl -fsSL https://raw.githubusercontent.com/platformio/platformio-core/develop/platformio/assets/system/99-platformio-udev.rules | sudo tee /etc/udev/rules.d/99-platformio-udev.rules
-RUN service udev restart 
-RUN usermod -a -G dialout vscode
-RUN usermod -a -G plugdev vscode
-
-ARG FEDORA_COMPAT=0
-### Set up compatibility with Fedora host (if needed)
-### Since Fedora uses `18` as the group for dialout, we need to add it to the container
-RUN if [ "$FEDORA_COMPAT" = "1" ]; then \
-  sudo groupadd -g 18 compat_dialout; \
-  sudo usermod -a -G compat_dialout vscode; \
-fi
-
+      libpixman-1-dev \
+ && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+ && apt-get -y install --no-install-recommends nodejs \
+ && git lfs install --system \
+ && mkdir -p /usr/local/share/npm-global /home/vscode/.pio-core \
+ && chown -R vscode:vscode /usr/local/share/npm-global /home/vscode/.pio-core \
+ && rm -rf /var/lib/apt/lists/*
 
 # Install PlatformIO CLI
 USER vscode
-RUN curl -fsSL -o /tmp/get-platformio.py https://raw.githubusercontent.com/platformio/platformio-core-installer/master/get-platformio.py
-RUN python3 /tmp/get-platformio.py
-RUN echo 'export PATH="$PATH:$HOME/.platformio/penv/bin"' | tee -a /home/vscode/.bashrc /home/vscode/.zshrc 
-RUN echo 'export PATH="$PATH:$HOME/.platformio/penv/bin"' | sudo tee -a /root/.bashrc /root/.zshrc
+RUN curl -fsSL -o /tmp/get-platformio.py https://raw.githubusercontent.com/platformio/platformio-core-installer/master/get-platformio.py \
+ && python3 /tmp/get-platformio.py \
+ && rm -f /tmp/get-platformio.py \
+ && echo 'export PATH="$HOME/.platformio/penv/bin:/usr/local/share/npm-global/bin:$PATH"' | tee -a /home/vscode/.bashrc /home/vscode/.zshrc > /dev/null
